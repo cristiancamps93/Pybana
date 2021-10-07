@@ -1,0 +1,231 @@
+# Cristian Camps Morillo - Getronics - Quality Assurance Project
+"""
+#VERSION CONTROL
+#13/04/2021: project started
+#14/04/2021: 1.0 - Output correlation into a csv file.
+#15/04/2021: 2.0 - Adapting script to New Output file from XXXXXXXXX, adding the new process: Alarms for every test
+#27/05/2021: 2.1 - Changing output fields, checking output errors and adding date to the output to be included in kibana, added % accuracy
+
+# DOCUMENTATION
+#https://www.youtube.com/watch?v=8ASjvOIyyl8
+#Date codes: https://docs.python.org/3/library/datetime.html#strftime-and-strptime-behavior
+
+#Obs: Files and rows must not start with weird characters. Otherwise this will explode.
+#test = test.fillna(0) Fills empty spaces with 0 value
+"""
+
+# IMPORTS
+import csv
+import pandas as pd
+from datetime import datetime
+import time
+import numpy as np
+
+
+# Output de alarms por technique y subtechnique TO DO
+#Check why there are outputs with 0 in tests correlations
+
+# DISCLAIMER
+print("Hello buddy, you are about to see the magical experience of auto reporting :)")
+print("So, please attach both files 'SampleOutput2.0.csv' and 'SampleTest.csv' in the same folder where I am :)")
+input("Press any key to continue:")
+
+
+# MASTER VARIABLES
+# How many alarms in the X minutes from the test start
+minsForAlarm = 4*60 #Minutes in seconds
+outputFileName = "SampleOutput2.0.csv"
+testFileName = "SampleTest.csv"
+correlationTest2Alarms = "Correlation_Test_To_Alarms.csv"
+correlationAlarms2Test = "Correlation_Alarms_For_Each_Test.csv"
+correlation = "Correlation.csv"
+
+# Accuracy vars
+num = 0
+den = 0
+percent = 0
+
+
+# Function that reads both files (input = 2 file names) and return 2 pandas objects that contain the data
+def importData(outputF, testF):
+    # IMPORT OUTPUT DATA
+    # OUTPUT FILE FORMAT:
+    # Time;Test;Subtest;Description;SO
+    output = pd.read_csv(outputF, sep=';')
+    output = output.dropna()  # Clean NaN values
+
+    # DD/MM/YYYY hh:mm -> date format
+    output['Time'] = pd.to_datetime(output['Time'], format='%m/%d/%Y %H:%M:%S')
+
+    # IMPORT TEST DATA
+    # TEST FILE FORMAT:
+    # entity, alarm rule, alarmID, AlarmDate, hour, lineNumber, alarmAIE
+    test = pd.read_csv(testF, sep=';')
+    test = test.dropna()  # Clean NaN values
+
+    # MM/DD/YYYY   HH:MM:SS -> date formate
+    test['Alarm Date'] = pd.to_datetime(test['Alarm Date'], format='%m/%d/%Y   %I:%M:%S%p')
+    return output, test
+
+
+# Creating the Correlation File
+with open(correlation, mode='w') as writer:
+
+    #Importing data
+    output, test = importData(outputFileName, testFileName)
+
+    # Headers of the file
+    now = datetime.now()
+    date_time = now.strftime("%m/%d/%Y, %H:%M:%S")
+    writer.write("Correlation between Output and Test CSVs on: " + date_time + "\n")
+    writer.write("Technique; Subtechnique; Name; Count(alarms) within the next " + str(minsForAlarm / 60) + " minutes; OS;" + "Alarms;" + "\n")
+
+    # Loop for the first file
+
+    line = 0
+    for dateO in output['Time']:
+        countAlarms = 0
+        alarmsString = ""
+        print("/")
+
+        ## Converting date into Integer (epoch)
+        dateOE = time.mktime(dateO.timetuple())
+
+        lineT = 0
+        # Loop for second file and time comparations
+        for dateT in test['Alarm Date']:
+
+            ## Converting date into Integer (epoch)
+            dateTE = time.mktime(dateT.timetuple())
+
+            # Calculation of the time difference
+            datediff = dateTE - dateOE
+
+            if ((datediff <= minsForAlarm) & (datediff > 0)):
+                countAlarms += 1
+                alarmT = test.iloc[lineT]
+                alarmT = alarmT["Alarm Rule"]
+                alarmsString = alarmsString + ";" + alarmT
+            lineT += 1
+
+
+
+
+        # Gathering the data: Line0 -> line of the match, nameO -> name of the test, osO -> Operating System
+        lineO = output.iloc[line]
+        nameO = lineO['Description']
+        osO = lineO['OS']
+        techO = lineO['Test']
+        subtechO = lineO['Subtest']
+
+
+
+        # Writes into the file -> test name and count of the alarms.
+        writer.write(str(techO) + ";" + str(subtechO) + ";" + nameO + ";" + str(countAlarms) + ";" + osO + alarmsString + ";" + "\n")
+        line += 1
+
+
+# Creating the Correlation test File
+with open(correlationTest2Alarms, mode='w') as writer:
+
+    #Importing data
+    output, test = importData(outputFileName, testFileName)
+
+    # Headers of the file
+    now = datetime.now()
+    date_time = now.strftime("%m/%d/%Y, %H:%M:%S")
+    writer.write("Correlation between Output and Test CSVs on: " + date_time + "\n")
+    writer.write("Technique; Subtechnique; Name; Count(alarms) within the next " + str(minsForAlarm / 60) + " minutes; OS" + "\n")
+
+    # Loop for the first file
+    line = 0
+    for dateO in output['Time']:
+        countAlarms = 0
+        print(":")
+
+        ## Converting date into Integer (epoch)
+        dateOE = time.mktime(dateO.timetuple())
+
+
+        # Loop for second file and time comparations
+        for dateT in test['Alarm Date']:
+
+            ## Converting date into Integer (epoch)
+            dateTE = time.mktime(dateT.timetuple())
+
+            # Calculation of the time difference
+            datediff = dateTE - dateOE
+
+            if ((datediff <= minsForAlarm) & (datediff > 0)):
+                countAlarms += 1
+
+        if (countAlarms > 0):
+            num += 1
+        den += 1
+
+        # Gathering the data: Line0 -> line of the match, nameO -> name of the test, osO -> Operating System
+        lineO = output.iloc[line]
+        nameO = lineO['Description']
+        osO = lineO['OS']
+        techO = lineO['Test']
+        subtechO = lineO['Subtest']
+
+        # Writes into the file -> test name and count of the alarms.
+        writer.write(str(techO) + ";" + str(subtechO) + ";" + nameO + ";" + str(countAlarms) + ";" + osO + "\n")
+        countAlarms = 0
+        line += 1
+    percent = num/den
+
+# Creating the Correlation alarms file
+with open(correlationAlarms2Test, mode='w') as writer:
+
+    #Importing data
+    output, test = importData(outputFileName, testFileName)
+
+    # Writing headers
+    now = datetime.now()
+    date_time = now.strftime("%m/%d/%Y, %H:%M:%S")
+    writer.write("Correlation between Alarms and tests: " + date_time + "\n")
+    writer.write("Entity; Count(Tests);\n")
+
+
+    lineT = 0
+    for alarmT in test['Alarm Rule']:
+        countTests = 0
+        print(".")
+        alarmLine = test.iloc[lineT]
+
+        entity = alarmLine['Entity']
+        alarmRule = alarmLine['Alarm Rule']
+        alarmDate = alarmLine['Alarm Date']
+
+        ## Converting date into Integer (epoch)
+        alarmDateE = time.mktime(alarmDate.timetuple())
+
+        lineO = 0
+        for line in output['Description']:
+            outputLine = output.iloc[lineO]
+            outputTime = outputLine['Time']
+            outputTest = outputLine['Test']
+            outputDesc = outputLine['Description']
+            outputOS = outputLine['OS']
+
+            ## Converting date into Integer (epoch)
+            outputTimeE = time.mktime(outputTime.timetuple())
+
+            # Calculation of the time difference
+            datediff = alarmDateE - outputTimeE
+            if ((datediff <= minsForAlarm) & (datediff > 0)):
+                countTests += 1
+
+            lineO += 1
+
+        # Writes into the file -> test name and count of the alarms.
+        writer.write(alarmRule + ";" + str(countTests) + "\n")
+        countTests = 0
+
+        lineT += 1
+
+        ## function group by en pandas, ahora mismo lista si la alarma ha saltado por un test. Falta agrupar alarmas y hacer count del campo
+
+print (percent)
